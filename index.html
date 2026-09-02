@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SkyGuard AI — Physics-Informed Anomaly Detection</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&display=swap"
+        rel="stylesheet" />
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --parchment: #f4ecd8;
+            --parchment-dark: #e8d9b8;
+            --parchment-darker: #d9c89a;
+            --ink: #1a1208;
+            --ink-light: #3d2e10;
+            --ink-faint: #7a6540;
+            --sepia: #8b6914;
+            --sepia-light: #c4a35a;
+            --red-fault: #8b1a1a;
+            --green-healthy: #1a4a1a;
+            --amber-review: #7a4a00;
+            --blue-weather: #1a2a5a;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            background: var(--parchment);
+            font-family: 'EB Garamond', Georgia, serif;
+            color: var(--ink);
+            overflow-x: hidden;
+        }
+
+        /* Parchment texture overlay */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
+            pointer-events: none;
+            z-index: 1000;
+            opacity: 0.5;
+        }
+
+        header {
+            text-align: center;
+            padding: 2.5rem 1rem 0.5rem;
+            position: relative;
+        }
+
+        header::after {
+            content: '';
+            display: block;
+            margin: 1rem auto 0;
+            width: 60%;
+            height: 1px;
+            background: linear-gradient(to right, transparent, var(--sepia), transparent);
+        }
+
+        .title-ornament {
+            font-size: 0.85rem;
+            letter-spacing: 0.35em;
+            color: var(--ink-faint);
+            text-transform: uppercase;
+            margin-bottom: 0.4rem;
+        }
+
+        h1 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: clamp(2rem, 4vw, 3.2rem);
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            line-height: 1.1;
+            color: var(--ink);
+        }
+
+        h1 em {
+            font-style: italic;
+            color: var(--ink-light);
+        }
+
+        .subtitle {
+            font-size: 1rem;
+            color: var(--ink-faint);
+            margin-top: 0.5rem;
+            font-style: italic;
+            letter-spacing: 0.02em;
+        }
+
+        .meta-line {
+            font-size: 0.78rem;
+            color: var(--sepia-light);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-top: 0.3rem;
+        }
+
+        /* Controls */
+        .controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 2rem;
+            padding: 1.2rem 1rem 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .control-label {
+            font-size: 0.82rem;
+            color: var(--ink-faint);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+
+        .toggle-btn {
+            background: none;
+            border: 1px solid var(--sepia);
+            color: var(--ink);
+            font-family: 'EB Garamond', serif;
+            font-size: 0.9rem;
+            padding: 0.35rem 1.1rem;
+            cursor: pointer;
+            letter-spacing: 0.05em;
+            transition: background 0.2s, color 0.2s;
+            position: relative;
+        }
+
+        .toggle-btn::before,
+        .toggle-btn::after {
+            content: '✦';
+            font-size: 0.6rem;
+            color: var(--sepia-light);
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .toggle-btn::before {
+            left: -1rem;
+        }
+
+        .toggle-btn::after {
+            right: -1rem;
+        }
+
+        .toggle-btn:hover,
+        .toggle-btn.active {
+            background: var(--ink);
+            color: var(--parchment);
+            border-color: var(--ink);
+        }
+
+        .toggle-btn.active::before,
+        .toggle-btn.active::after {
+            color: var(--parchment-dark);
+        }
+
+        .fault-select {
+            background: var(--parchment);
+            border: 1px solid var(--sepia);
+            color: var(--ink);
+            font-family: 'EB Garamond', serif;
+            font-size: 0.9rem;
+            padding: 0.35rem 0.7rem;
+            cursor: pointer;
+            outline: none;
+        }
+
+        /* Main SVG canvas */
+        #canvas-wrap {
+            width: 100%;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 1rem 2rem;
+            position: relative;
+        }
+
+        #main-svg {
+            width: 100%;
+            display: block;
+        }
+
+        /* SVG element styles */
+        .edge {
+            fill: none;
+            stroke: var(--ink);
+            stroke-width: 0.8;
+            stroke-linecap: round;
+            opacity: 0;
+            transition: stroke 0.3s, stroke-width 0.3s, opacity 0.3s;
+        }
+
+        .edge.visible {
+            opacity: 0.35;
+        }
+
+        .edge.highlighted {
+            stroke: var(--sepia);
+            stroke-width: 1.8;
+            opacity: 0.9;
+        }
+
+        .edge.fault-path {
+            stroke: var(--red-fault);
+            stroke-width: 2;
+            opacity: 0.85;
+        }
+
+        .node-circle {
+            fill: var(--parchment);
+            stroke: var(--ink);
+            stroke-width: 1;
+            cursor: pointer;
+            transition: fill 0.25s, stroke-width 0.25s;
+        }
+
+        .node-circle:hover {
+            stroke-width: 2;
+            fill: var(--parchment-dark);
+        }
+
+        .node-circle.highlighted {
+            fill: var(--parchment-dark);
+            stroke-width: 2;
+            stroke: var(--sepia);
+        }
+
+        .node-circle.fault-active {
+            fill: #f0d0c0;
+            stroke: var(--red-fault);
+            stroke-width: 2.5;
+        }
+
+        .node-circle.fault-caught {
+            fill: #e8c0b0;
+            stroke: var(--red-fault);
+            stroke-width: 3;
+        }
+
+        .node-circle.root-node {
+            fill: var(--parchment-darker);
+            stroke-width: 1.5;
+        }
+
+        .node-circle.fusion-node {
+            fill: var(--parchment-darker);
+            stroke-width: 1.5;
+        }
+
+        .node-label {
+            font-family: 'EB Garamond', serif;
+            font-size: 10px;
+            fill: var(--ink);
+            text-anchor: middle;
+            dominant-baseline: middle;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-style: italic;
+        }
+
+        .node-label.visible {
+            opacity: 1;
+        }
+
+        .layer-label {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 13px;
+            fill: var(--ink-faint);
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            opacity: 0;
+            transition: opacity 0.4s;
+        }
+
+        .layer-label.visible {
+            opacity: 1;
+        }
+
+        .layer-rule {
+            stroke: var(--sepia-light);
+            stroke-width: 0.5;
+            stroke-dasharray: 3 5;
+            opacity: 0;
+            transition: opacity 0.4s;
+        }
+
+        .layer-rule.visible {
+            opacity: 0.4;
+        }
+
+        /* Verdict badges */
+        .verdict-text {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-anchor: middle;
+            dominant-baseline: middle;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .verdict-text.visible {
+            opacity: 1;
+        }
+
+        /* Tooltip */
+        #tooltip {
+            position: fixed;
+            background: var(--parchment);
+            border: 1px solid var(--sepia);
+            padding: 1rem 1.2rem;
+            max-width: 320px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 500;
+            font-size: 0.88rem;
+            line-height: 1.55;
+        }
+
+        #tooltip.visible {
+            opacity: 1;
+        }
+
+        #tooltip::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(to right, var(--sepia-light), var(--sepia), var(--sepia-light));
+        }
+
+        .tt-layer {
+            font-size: 0.7rem;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--sepia);
+            margin-bottom: 0.3rem;
+        }
+
+        .tt-title {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--ink);
+            margin-bottom: 0.4rem;
+        }
+
+        .tt-desc {
+            color: var(--ink-light);
+            margin-bottom: 0.5rem;
+        }
+
+        .tt-example {
+            font-size: 0.8rem;
+            color: var(--ink-faint);
+            border-left: 2px solid var(--sepia-light);
+            padding-left: 0.6rem;
+            font-style: italic;
+        }
+
+        .tt-example strong {
+            color: var(--red-fault);
+            font-style: normal;
+        }
+
+        /* Legend */
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            flex-wrap: wrap;
+            padding: 0.5rem 1rem 1.5rem;
+            font-size: 0.8rem;
+            color: var(--ink-faint);
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            border: 1px solid var(--ink);
+            flex-shrink: 0;
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 1rem;
+            font-size: 0.75rem;
+            color: var(--sepia-light);
+            letter-spacing: 0.1em;
+            border-top: 1px solid var(--parchment-darker);
+            margin-top: 1rem;
+        }
+
+        /* Fault simulation status */
+        #fault-status {
+            text-align: center;
+            font-size: 0.85rem;
+            font-style: italic;
+            color: var(--red-fault);
+            min-height: 1.4rem;
+            padding: 0.2rem;
+            letter-spacing: 0.03em;
+            transition: opacity 0.3s;
+        }
+
+        /* Decorative corner marks */
+        .corner-mark {
+            position: fixed;
+            font-size: 1.2rem;
+            color: var(--sepia-light);
+            opacity: 0.4;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .corner-mark.tl {
+            top: 0.8rem;
+            left: 1rem;
+        }
+
+        .corner-mark.tr {
+            top: 0.8rem;
+            right: 1rem;
+        }
+
+        .corner-mark.bl {
+            bottom: 0.8rem;
+            left: 1rem;
+        }
+
+        .corner-mark.br {
+            bottom: 0.8rem;
+            right: 1rem;
+        }
+
+        @keyframes drawPath {
+            from {
+                stroke-dashoffset: 1;
+            }
+
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        @keyframes fadeInNode {
+            from {
+                opacity: 0;
+                transform: scale(0.3);
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        @keyframes pulseNode {
+
+            0%,
+            100% {
+                r: attr(r);
+            }
+
+            50% {
+                r: calc(attr(r) + 3);
+            }
+        }
+
+        .fault-pulse {
+            animation: faultPulse 0.6s ease-in-out;
+        }
+
+        @keyframes faultPulse {
+            0% {
+                transform: scale(1);
+            }
+
+            40% {
+                transform: scale(1.25);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="corner-mark tl">✦</div>
+    <div class="corner-mark tr">✦</div>
+    <div class="corner-mark bl">✦</div>
+    <div class="corner-mark br">✦</div>
+
+    <header>
+        <div class="title-ornament">SIH 2026 · Problem Statement 26073 · Ministry of Earth Sciences / IMD</div>
+        <h1>SkyGuard <em>AI</em></h1>
+        <div class="subtitle">A Physics-Informed Anomaly Detection System for Automatic Weather Station Sensors</div>
+        <div class="meta-line">Signal Provenance · Layer-by-Layer Verification · Confidence Fusion</div>
+    </header>
+
+    <div class="controls">
+        <span class="control-label">Simulate</span>
+        <select class="fault-select" id="fault-type">
+            <option value="frozen">Frozen Sensor (stuck value)</option>
+            <option value="physics">Physics Violation (T_dew &gt; T_air)</option>
+            <option value="spike">Sudden Spike (+40°C in 1 min)</option>
+            <option value="drift">Slow Drift (calibration error)</option>
+            <option value="healthy">Healthy Reading</option>
+        </select>
+        <button class="toggle-btn" id="sim-btn">▶ Run Simulation</button>
+        <button class="toggle-btn" id="reset-btn">↺ Reset</button>
+    </div>
+
+    <div id="fault-status"></div>
+
+    <div id="canvas-wrap">
+        <svg id="main-svg" viewBox="0 0 1200 820" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+
+    <div class="legend">
+        <div class="legend-item">
+            <div class="legend-dot" style="background:#f4ecd8"></div> Healthy / Unprocessed
+        </div>
+        <div class="legend-item">
+            <div class="legend-dot" style="background:#e8c0b0; border-color:#8b1a1a"></div> Fault Detected
+        </div>
+        <div class="legend-item">
+            <div class="legend-dot" style="background:#d9c89a; border-color:#8b6914"></div> Layer Active
+        </div>
+        <div class="legend-item">
+            <div class="legend-dot" style="background:#f4ecd8; border-color:#1a1208; width:16px; height:16px"></div>
+            Fusion / Root
+        </div>
+    </div>
+
+    <footer>
+        Rendered in the manner of a 19th-century scientific manuscript · SkyGuard AI Visual Explainer · 2026
+    </footer>
+
+    <div id="tooltip">
+        <div class="tt-layer" id="tt-layer"></div>
+        <div class="tt-title" id="tt-title"></div>
+        <div class="tt-desc" id="tt-desc"></div>
+        <div class="tt-example" id="tt-example"></div>
+    </div>
+
+    <script>
+        (function () {
+            'use strict';
+
+            const SVG_NS = 'http://www.w3.org/2000/svg';
+            const svg = document.getElementById('main-svg');
+            const W = 1200, H = 820;
+
+            // ── Layer definitions ──────────────────────────────────────────────────────
+            const LAYERS = [
+                {
+                    id: 'root',
+                    name: 'Raw Sensor Reading',
+                    y: 760,
+                    color: '#1a1208',
+                    nodes: [{ id: 'root', x: 600, r: 22, label: 'AWS\nReading' }],
+                    info: {
+                        layer: 'Input',
+                        title: 'Raw AWS Sensor Reading',
+                        desc: 'A timestamped observation from an Automatic Weather Station — temperature, pressure, humidity, wind speed, dew point — arrives as a raw data packet.',
+                        example: 'T_air = 38.2°C, T_dew = 41.5°C, P = 1012 hPa — values accepted as-is before any validation.'
+                    }
+                },
+                {
+                    id: 'physics',
+                    name: 'Physics Sanity Checks',
+                    y: 640,
+                    color: '#2a1a6a',
+                    nodes: [
+                        { id: 'ph1', x: 380, r: 14, label: 'Dew-point\nBound' },
+                        { id: 'ph2', x: 500, r: 12, label: 'Pressure\nRange' },
+                        { id: 'ph3', x: 620, r: 16, label: 'Humidity\nSaturation' },
+                        { id: 'ph4', x: 740, r: 11, label: 'Wind\nPhysics' },
+                        { id: 'ph5', x: 840, r: 13, label: 'Temp\nGradient' },
+                    ],
+                    info: {
+                        layer: 'Layer I — Physics Sanity',
+                        title: 'Thermodynamic & Atmospheric Constraints',
+                        desc: 'Applies hard physical laws: dew-point cannot exceed air temperature, relative humidity ≤ 100%, pressure within altitude-corrected bounds, wind speed non-negative.',
+                        example: 'T_dew = 41.5°C > T_air = 38.2°C → physically impossible → flagged as SENSOR FAULT immediately.'
+                    }
+                },
+                {
+                    id: 'ml',
+                    name: 'ML Anomaly Detection',
+                    y: 520,
+                    color: '#1a3a1a',
+                    nodes: [
+                        { id: 'ml1', x: 280, r: 13, label: 'Isolation\nForest' },
+                        { id: 'ml2', x: 400, r: 15, label: 'SHAP\nAttribution' },
+                        { id: 'ml3', x: 530, r: 12, label: 'Trend\nDecomp.' },
+                        { id: 'ml4', x: 660, r: 14, label: 'Seasonal\nBaseline' },
+                        { id: 'ml5', x: 790, r: 11, label: 'Residual\nScore' },
+                        { id: 'ml6', x: 900, r: 13, label: 'Ensemble\nVote' },
+                    ],
+                    info: {
+                        layer: 'Layer II — ML Anomaly Detection',
+                        title: 'Isolation Forest + SHAP + STL Decomposition',
+                        desc: 'An Isolation Forest trained on 5 years of IMD data scores each reading. SHAP values identify which variable drives the anomaly. STL decomposition separates trend, seasonal, and residual components.',
+                        example: 'Temperature residual = +12σ after seasonal removal → Isolation Forest score 0.91 → SHAP: humidity feature dominant → flagged.'
+                    }
+                },
+                {
+                    id: 'frozen',
+                    name: 'Frozen Sensor Detection',
+                    y: 400,
+                    color: '#3a1a00',
+                    nodes: [
+                        { id: 'fr1', x: 340, r: 12, label: '2nd Deriv.\nCheck' },
+                        { id: 'fr2', x: 470, r: 14, label: 'Variance\nWindow' },
+                        { id: 'fr3', x: 600, r: 11, label: 'Run-length\nTest' },
+                        { id: 'fr4', x: 730, r: 13, label: 'Entropy\nScore' },
+                        { id: 'fr5', x: 860, r: 10, label: 'Bit-flip\nDetect' },
+                    ],
+                    info: {
+                        layer: 'Layer III — Frozen Sensor Detection',
+                        title: 'Second-Derivative & Variance Analysis',
+                        desc: 'Computes the second derivative of each variable over a rolling 30-minute window. A sensor reporting identical values has zero variance and zero second derivative — a statistical impossibility in real atmosphere.',
+                        example: 'T_air = 24.7°C for 47 consecutive readings → Δ²T = 0, variance = 0 → sensor frozen → FAULT flagged.'
+                    }
+                },
+                {
+                    id: 'forecast',
+                    name: 'Forecasting Layer',
+                    y: 280,
+                    color: '#1a2a4a',
+                    nodes: [
+                        { id: 'fc1', x: 380, r: 15, label: 'Chronos-2\nPrediction' },
+                        { id: 'fc2', x: 520, r: 12, label: 'Prediction\nInterval' },
+                        { id: 'fc3', x: 650, r: 13, label: 'Error\nMagnitude' },
+                        { id: 'fc4', x: 790, r: 11, label: 'Conf.\nBand' },
+                    ],
+                    info: {
+                        layer: 'Layer IV — Forecasting (Chronos-2)',
+                        title: 'Amazon Chronos-2 Time-Series Prediction Error',
+                        desc: 'Chronos-2 (zero-shot probabilistic forecaster) predicts the next observation from the past 2 hours. If the actual reading falls outside the 99% prediction interval, it is flagged as anomalous.',
+                        example: 'Chronos-2 predicts T ∈ [22.1, 26.3]°C; actual = 38.9°C → prediction error = 12.6°C → outside 99% CI → flagged.'
+                    }
+                },
+                {
+                    id: 'spatial',
+                    name: 'Spatial Consistency',
+                    y: 160,
+                    color: '#2a1a00',
+                    nodes: [
+                        { id: 'sp1', x: 300, r: 13, label: 'Neighbour\nZ-score' },
+                        { id: 'sp2', x: 440, r: 11, label: 'Kriging\nInterp.' },
+                        { id: 'sp3', x: 570, r: 14, label: 'IDW\nWeighting' },
+                        { id: 'sp4', x: 700, r: 12, label: 'Spatial\nGradient' },
+                        { id: 'sp5', x: 840, r: 10, label: 'Cluster\nConsist.' },
+                        { id: 'sp6', x: 960, r: 13, label: 'Regional\nBaseline' },
+                    ],
+                    info: {
+                        layer: 'Layer V — Spatial Consistency',
+                        title: 'Neighbour Station Z-Score & Kriging Interpolation',
+                        desc: 'Compares the reading against inverse-distance-weighted interpolation from the nearest 5–8 AWS stations. A Z-score > 3.5 relative to the spatial field indicates a local sensor fault rather than a real weather event.',
+                        example: 'Station reports 52°C; 6 neighbours average 34°C; spatial Z-score = 4.8 → isolated spike → SENSOR FAULT, not heatwave.'
+                    }
+                },
+                {
+                    id: 'fusion',
+                    name: 'Confidence Fusion',
+                    y: 55,
+                    color: '#1a1208',
+                    nodes: [
+                        { id: 'fus1', x: 420, r: 18, label: 'Bayesian\nFusion' },
+                        { id: 'fus2', x: 600, r: 24, label: 'Verdict', isVerdict: true },
+                        { id: 'fus3', x: 780, r: 18, label: 'Confidence\nScore' },
+                    ],
+                    info: {
+                        layer: 'Layer VI — Confidence Fusion',
+                        title: 'Bayesian Evidence Fusion → Final Verdict',
+                        desc: 'All layer signals are combined via Bayesian evidence fusion with learned layer weights. Output is one of four verdicts with a calibrated confidence score (0–1).',
+                        example: 'Physics: PASS · ML: 0.87 · Frozen: PASS · Forecast: 0.91 · Spatial: 0.78 → Fused: SENSOR FAULT (confidence 0.89).'
+                    }
+                }
+            ];
+
+            // Verdict nodes (children of fusion verdict node)
+            const VERDICTS = [
+                { id: 'v_fault', x: 460, y: 30, label: 'Sensor\nFault', color: '#8b1a1a', textColor: '#f4ecd8' },
+                { id: 'v_weather', x: 560, y: 18, label: 'Regional\nWeather', color: '#1a2a5a', textColor: '#f4ecd8' },
+                { id: 'v_healthy', x: 660, y: 30, label: 'Healthy', color: '#1a4a1a', textColor: '#f4ecd8' },
+                { id: 'v_review', x: 760, y: 18, label: 'Needs\nReview', color: '#7a4a00', textColor: '#f4ecd8' },
+            ];
+
+            // ── Edge connectivity ──────────────────────────────────────────────────────
+            // root → physics
+            const EDGES_ROOT_PHYSICS = [
+                ['root', 'ph1'], ['root', 'ph2'], ['root', 'ph3'], ['root', 'ph4'], ['root', 'ph5']
+            ];
+            // physics → ml
+            const EDGES_PHYSICS_ML = [
+                ['ph1', 'ml1'], ['ph1', 'ml2'], ['ph2', 'ml2'], ['ph2', 'ml3'],
+                ['ph3', 'ml3'], ['ph3', 'ml4'], ['ph4', 'ml4'], ['ph4', 'ml5'], ['ph5', 'ml5'], ['ph5', 'ml6']
+            ];
+            // ml → frozen
+            const EDGES_ML_FROZEN = [
+                ['ml1', 'fr1'], ['ml2', 'fr1'], ['ml2', 'fr2'], ['ml3', 'fr2'],
+                ['ml3', 'fr3'], ['ml4', 'fr3'], ['ml4', 'fr4'], ['ml5', 'fr4'], ['ml5', 'fr5'], ['ml6', 'fr5']
+            ];
+            // frozen → forecast
+            const EDGES_FROZEN_FORECAST = [
+                ['fr1', 'fc1'], ['fr2', 'fc1'], ['fr2', 'fc2'], ['fr3', 'fc2'],
+                ['fr3', 'fc3'], ['fr4', 'fc3'], ['fr4', 'fc4'], ['fr5', 'fc4']
+            ];
+            // forecast → spatial
+            const EDGES_FORECAST_SPATIAL = [
+                ['fc1', 'sp1'], ['fc1', 'sp2'], ['fc2', 'sp2'], ['fc2', 'sp3'],
+                ['fc3', 'sp3'], ['fc3', 'sp4'], ['fc4', 'sp4'], ['fc4', 'sp5'], ['fc1', 'sp6'], ['fc3', 'sp6']
+            ];
+            // spatial → fusion
+            const EDGES_SPATIAL_FUSION = [
+                ['sp1', 'fus1'], ['sp2', 'fus1'], ['sp3', 'fus1'], ['sp4', 'fus2'],
+                ['sp5', 'fus2'], ['sp6', 'fus2'], ['sp1', 'fus3'], ['sp4', 'fus3'], ['sp6', 'fus3']
+            ];
+            // fusion internal
+            const EDGES_FUSION_INTERNAL = [
+                ['fus1', 'fus2'], ['fus3', 'fus2']
+            ];
+            // fusion → verdicts
+            const EDGES_FUSION_VERDICT = [
+                ['fus2', 'v_fault'], ['fus2', 'v_weather'], ['fus2', 'v_healthy'], ['fus2', 'v_review']
+            ];
+
+            const ALL_EDGE_GROUPS = [
+                { edges: EDGES_ROOT_PHYSICS, delay: 0.2 },
+                { edges: EDGES_PHYSICS_ML, delay: 0.5 },
+                { edges: EDGES_ML_FROZEN, delay: 0.85 },
+                { edges: EDGES_FROZEN_FORECAST, delay: 1.2 },
+                { edges: EDGES_FORECAST_SPATIAL, delay: 1.55 },
+                { edges: EDGES_SPATIAL_FUSION, delay: 1.9 },
+                { edges: EDGES_FUSION_INTERNAL, delay: 2.2 },
+                { edges: EDGES_FUSION_VERDICT, delay: 2.4 },
+            ];
+
+            // ── Build node lookup ──────────────────────────────────────────────────────
+            const nodeMap = {};
+            LAYERS.forEach(layer => {
+                layer.nodes.forEach(n => {
+                    nodeMap[n.id] = { ...n, layerId: layer.id, layerInfo: layer.info, layerName: layer.name };
+                });
+            });
+            VERDICTS.forEach(v => {
+                nodeMap[v.id] = { ...v, layerId: 'verdict', layerInfo: LAYERS[6].info };
+            });
+
+            // ── SVG helpers ────────────────────────────────────────────────────────────
+            function el(tag, attrs = {}) {
+                const e = document.createElementNS(SVG_NS, tag);
+                Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v));
+                return e;
+            }
+
+            function makeCurvedPath(x1, y1, x2, y2) {
+                const dy = y2 - y1;
+                const cp1y = y1 + dy * 0.35;
+                const cp2y = y1 + dy * 0.65;
+                // Add slight organic wobble
+                const wobble = (Math.random() - 0.5) * 18;
+                return `M ${x1} ${y1} C ${x1 + wobble} ${cp1y}, ${x2 - wobble} ${cp2y}, ${x2} ${y2}`;
+            }
+
+            // ── Render ─────────────────────────────────────────────────────────────────
+            const gEdges = el('g', { id: 'g-edges' });
+            const gNodes = el('g', { id: 'g-nodes' });
+            const gLabels = el('g', { id: 'g-labels' });
+            const gLayerLines = el('g', { id: 'g-layer-lines' });
+            const gLayerLabels = el('g', { id: 'g-layer-labels' });
+
+            svg.appendChild(gLayerLines);
+            svg.appendChild(gEdges);
+            svg.appendChild(gNodes);
+            svg.appendChild(gLabels);
+            svg.appendChild(gLayerLabels);
+
+            // Draw layer guide lines and labels
+            LAYERS.forEach((layer, i) => {
+                if (i === 0) return; // skip root
+                const rule = el('line', {
+                    x1: 60, y1: layer.y, x2: W - 60, y2: layer.y,
+                    class: 'layer-rule',
+                    id: `rule-${layer.id}`
+                });
+                gLayerLines.appendChild(rule);
+
+                const lbl = el('text', {
+                    x: 62, y: layer.y - 8,
+                    class: 'layer-label',
+                    id: `lbl-${layer.id}`
+                });
+                lbl.textContent = layer.name;
+                gLayerLabels.appendChild(lbl);
+            });
+
+            // Draw edges
+            const edgeEls = {};
+            ALL_EDGE_GROUPS.forEach(group => {
+                group.edges.forEach(([fromId, toId]) => {
+                    const from = nodeMap[fromId];
+                    const to = nodeMap[toId];
+                    if (!from || !to) return;
+                    const fromY = from.y !== undefined ? from.y : LAYERS.find(l => l.nodes.find(n => n.id === fromId))?.y || 0;
+                    const toY = to.y !== undefined ? to.y : LAYERS.find(l => l.nodes.find(n => n.id === toId))?.y || 0;
+                    const fromX = from.x, toX = to.x;
+
+                    const d = makeCurvedPath(fromX, fromY, toX, toY);
+                    const pathLen = 300; // approximate
+                    const path = el('path', {
+                        d,
+                        class: 'edge',
+                        id: `edge-${fromId}-${toId}`,
+                        'stroke-dasharray': pathLen,
+                        'stroke-dashoffset': pathLen,
+                    });
+                    gEdges.appendChild(path);
+                    edgeEls[`${fromId}-${toId}`] = path;
+                });
+            });
+
+            // Draw nodes
+            const nodeEls = {};
+            const nodeLabelEls = {};
+
+            function drawNode(n, layerY, layerInfo, layerName) {
+                const y = n.y !== undefined ? n.y : layerY;
+                const g = el('g', {
+                    id: `ng-${n.id}`,
+                    transform: `translate(${n.x}, ${y})`,
+                    style: 'cursor:pointer'
+                });
+
+                const circle = el('circle', {
+                    r: n.r || 12,
+                    class: `node-circle${n.id === 'root' ? ' root-node' : ''}${n.isVerdict ? ' fusion-node' : ''}`,
+                    id: `nc-${n.id}`
+                });
+
+                // Subtle hand-drawn imperfection via slight ellipse skew
+                const skewX = (Math.random() - 0.5) * 2;
+                const skewY = (Math.random() - 0.5) * 2;
+                circle.setAttribute('cx', skewX);
+                circle.setAttribute('cy', skewY);
+
+                g.appendChild(circle);
+
+                // Label (multi-line via tspan)
+                if (n.label) {
+                    const lines = n.label.split('\n');
+                    const txt = el('text', {
+                        class: `node-label${n.id === 'root' ? ' visible' : ''}`,
+                        id: `nl-${n.id}`,
+                        y: n.r + 14
+                    });
+                    lines.forEach((line, i) => {
+                        const ts = el('tspan', { x: 0, dy: i === 0 ? 0 : '1.1em' });
+                        ts.textContent = line;
+                        txt.appendChild(ts);
+                    });
+                    g.appendChild(txt);
+                    nodeLabelEls[n.id] = txt;
+                }
+
+                // Verdict color fill
+                if (n.color && n.id.startsWith('v_')) {
+                    circle.setAttribute('fill', n.color);
+                    circle.setAttribute('stroke', n.color);
+                    const vt = el('text', {
+                        class: 'verdict-text',
+                        id: `vt-${n.id}`,
+                        fill: n.textColor || '#f4ecd8',
+                        y: 0
+                    });
+                    const lines = n.label.split('\n');
+                    lines.forEach((line, i) => {
+                        const ts = el('tspan', { x: 0, dy: i === 0 ? `-${(lines.length - 1) * 0.55}em` : '1.1em' });
+                        ts.textContent = line;
+                        vt.appendChild(ts);
+                    });
+                    g.appendChild(vt);
+                }
+
+                // Hover events
+                g.addEventListener('mouseenter', (e) => showTooltip(e, n, layerInfo, layerName));
+                g.addEventListener('mouseleave', hideTooltip);
+                g.addEventListener('mousemove', moveTooltip);
+
+                gNodes.appendChild(g);
+                nodeEls[n.id] = g;
+                return g;
+            }
+
+            LAYERS.forEach(layer => {
+                layer.nodes.forEach(n => drawNode(n, layer.y, layer.info, layer.name));
+            });
+            VERDICTS.forEach(v => drawNode(v, v.y, LAYERS[6].info, 'Confidence Fusion'));
+
+            // ── Tooltip ────────────────────────────────────────────────────────────────
+            const tooltip = document.getElementById('tooltip');
+            const ttLayer = document.getElementById('tt-layer');
+            const ttTitle = document.getElementById('tt-title');
+            const ttDesc = document.getElementById('tt-desc');
+            const ttEx = document.getElementById('tt-example');
+
+            function showTooltip(e, n, info, layerName) {
+                ttLayer.textContent = info.layer;
+                ttTitle.textContent = info.title;
+                ttDesc.textContent = info.desc;
+                ttEx.innerHTML = `<strong>Example:</strong> ${info.example}`;
+                tooltip.classList.add('visible');
+                moveTooltip(e);
+            }
+
+            function hideTooltip() {
+                tooltip.classList.remove('visible');
+            }
+
+            function moveTooltip(e) {
+                const pad = 16;
+                let x = e.clientX + pad;
+                let y = e.clientY + pad;
+                const tw = tooltip.offsetWidth;
+                const th = tooltip.offsetHeight;
+                if (x + tw > window.innerWidth - pad) x = e.clientX - tw - pad;
+                if (y + th > window.innerHeight - pad) y = e.clientY - th - pad;
+                tooltip.style.left = x + 'px';
+                tooltip.style.top = y + 'px';
+            }
+
+            // ── Grow animation ─────────────────────────────────────────────────────────
+            function animateGrowth() {
+                // Animate layer rules and labels
+                LAYERS.forEach((layer, i) => {
+                    if (i === 0) return;
+                    const delay = 0.15 + i * 0.35;
+                    setTimeout(() => {
+                        const rule = document.getElementById(`rule-${layer.id}`);
+                        const lbl = document.getElementById(`lbl-${layer.id}`);
+                        if (rule) rule.classList.add('visible');
+                        if (lbl) lbl.classList.add('visible');
+                    }, delay * 1000);
+                });
+
+                // Animate node labels
+                LAYERS.forEach((layer, i) => {
+                    const delay = 0.3 + i * 0.35;
+                    setTimeout(() => {
+                        layer.nodes.forEach(n => {
+                            const lbl = document.getElementById(`nl-${n.id}`);
+                            if (lbl) lbl.classList.add('visible');
+                        });
+                    }, delay * 1000);
+                });
+
+                // Animate verdict labels
+                setTimeout(() => {
+                    VERDICTS.forEach(v => {
+                        const vt = document.getElementById(`vt-${v.id}`);
+                        if (vt) vt.classList.add('visible');
+                    });
+                }, 2600);
+
+                // Animate edges group by group
+                ALL_EDGE_GROUPS.forEach(group => {
+                    group.edges.forEach(([fromId, toId], j) => {
+                        const path = edgeEls[`${fromId}-${toId}`];
+                        if (!path) return;
+                        const totalDelay = (group.delay + j * 0.04) * 1000;
+                        setTimeout(() => {
+                            const len = path.getTotalLength ? path.getTotalLength() : 300;
+                            path.setAttribute('stroke-dasharray', len);
+                            path.setAttribute('stroke-dashoffset', len);
+                            path.classList.add('visible');
+                            path.style.transition = 'stroke-dashoffset 0.5s ease, opacity 0.3s';
+                            path.style.strokeDashoffset = 0;
+                            // Force reflow
+                            path.getBoundingClientRect();
+                            path.style.strokeDashoffset = '0';
+                            path.setAttribute('stroke-dashoffset', 0);
+                        }, totalDelay);
+                    });
+                });
+            }
+
+            // ── Fault simulation ───────────────────────────────────────────────────────
+            const FAULT_SCENARIOS = {
+                frozen: {
+                    label: 'Frozen Sensor — stuck value detected',
+                    catchLayer: 'frozen',
+                    catchNode: 'fr1',
+                    path: ['root', 'ph3', 'ml3', 'fr1'],
+                    verdict: 'v_fault',
+                    message: 'Frozen sensor caught at Layer III — 2nd derivative = 0 for 47 readings.'
+                },
+                physics: {
+                    label: 'Physics Violation — T_dew > T_air',
+                    catchLayer: 'physics',
+                    catchNode: 'ph1',
+                    path: ['root', 'ph1'],
+                    verdict: 'v_fault',
+                    message: 'Physics violation caught at Layer I — T_dew (41.5°C) > T_air (38.2°C): impossible.'
+                },
+                spike: {
+                    label: 'Sudden Spike — +40°C in 1 minute',
+                    catchLayer: 'forecast',
+                    catchNode: 'fc1',
+                    path: ['root', 'ph2', 'ml2', 'fr3', 'fc1'],
+                    verdict: 'v_fault',
+                    message: 'Spike caught at Layer IV — Chronos-2 prediction error = 14.3°C, outside 99% CI.'
+                },
+                drift: {
+                    label: 'Slow Drift — calibration error',
+                    catchLayer: 'spatial',
+                    catchNode: 'sp1',
+                    path: ['root', 'ph3', 'ml4', 'fr2', 'fc3', 'sp1'],
+                    verdict: 'v_review',
+                    message: 'Slow drift caught at Layer V — spatial Z-score = 3.9 vs. neighbour stations.'
+                },
+                healthy: {
+                    label: 'Healthy Reading — all layers pass',
+                    catchLayer: null,
+                    catchNode: null,
+                    path: ['root', 'ph3', 'ml3', 'fr3', 'fc2', 'sp3', 'fus1', 'fus2'],
+                    verdict: 'v_healthy',
+                    message: 'All layers passed — reading classified as HEALTHY (confidence 0.94).'
+                }
+            };
+
+            let simActive = false;
+            let simTimeout = null;
+
+            function resetSim() {
+                simActive = false;
+                clearTimeout(simTimeout);
+                document.getElementById('fault-status').textContent = '';
+                // Reset all node circles
+                Object.values(nodeEls).forEach(g => {
+                    const c = g.querySelector('circle');
+                    if (c) {
+                        c.classList.remove('fault-active', 'fault-caught', 'highlighted');
+                    }
+                });
+                // Reset all edges
+                Object.values(edgeEls).forEach(p => {
+                    p.classList.remove('highlighted', 'fault-path');
+                });
+            }
+
+            function runSimulation() {
+                resetSim();
+                simActive = true;
+                const type = document.getElementById('fault-type').value;
+                const scenario = FAULT_SCENARIOS[type];
+                const statusEl = document.getElementById('fault-status');
+                statusEl.textContent = `Simulating: ${scenario.label}`;
+
+                const path = scenario.path;
+                let step = 0;
+
+                function animateStep() {
+                    if (!simActive || step >= path.length) {
+                        // Final verdict
+                        if (simActive && scenario.verdict) {
+                            const vg = nodeEls[scenario.verdict];
+                            if (vg) {
+                                const vc = vg.querySelector('circle');
+                                if (vc) {
+                                    vc.classList.add('fault-caught');
+                                    vc.classList.add('fault-pulse');
+                                }
+                            }
+                            // Light up fusion path
+                            ['fus1', 'fus2', 'fus3'].forEach(fid => {
+                                const fg = nodeEls[fid];
+                                if (fg) fg.querySelector('circle')?.classList.add('highlighted');
+                            });
+                            statusEl.textContent = scenario.message;
+                        }
+                        return;
+                    }
+
+                    const nodeId = path[step];
+                    const ng = nodeEls[nodeId];
+                    if (ng) {
+                        const c = ng.querySelector('circle');
+                        if (c) {
+                            const isCatch = nodeId === scenario.catchNode;
+                            c.classList.add(isCatch ? 'fault-caught' : 'fault-active');
+                            c.classList.add('fault-pulse');
+                            setTimeout(() => c.classList.remove('fault-pulse'), 600);
+                        }
+                    }
+
+                    // Light up edge to next node
+                    if (step < path.length - 1) {
+                        const nextId = path[step + 1];
+                        const edgeKey = `${nodeId}-${nextId}`;
+                        const altKey = `${nextId}-${nodeId}`;
+                        const ep = edgeEls[edgeKey] || edgeEls[altKey];
+                        if (ep) ep.classList.add('fault-path');
+                    }
+
+                    step++;
+                    simTimeout = setTimeout(animateStep, 600);
+                }
+
+                animateStep();
+            }
+
+            document.getElementById('sim-btn').addEventListener('click', function () {
+                this.classList.toggle('active');
+                runSimulation();
+            });
+
+            document.getElementById('reset-btn').addEventListener('click', () => {
+                document.getElementById('sim-btn').classList.remove('active');
+                resetSim();
+            });
+
+            // ── Decorative ink marks on nodes ─────────────────────────────────────────
+            // Add tiny cross-hatch marks near some nodes for manuscript feel
+            function addInkMark(x, y) {
+                const g = el('g', { transform: `translate(${x},${y})`, opacity: '0.15' });
+                const l1 = el('line', { x1: -4, y1: -4, x2: 4, y2: 4, stroke: '#1a1208', 'stroke-width': '0.5' });
+                const l2 = el('line', { x1: 4, y1: -4, x2: -4, y2: 4, stroke: '#1a1208', 'stroke-width': '0.5' });
+                g.appendChild(l1); g.appendChild(l2);
+                gLabels.appendChild(g);
+            }
+
+            // Scatter a few ink marks
+            [[200, 700], [1000, 680], [150, 500], [1050, 480], [180, 360], [1020, 340],
+            [160, 220], [1040, 200], [100, 80], [1100, 70]].forEach(([x, y]) => addInkMark(x, y));
+
+            // ── Ornamental border ──────────────────────────────────────────────────────
+            const border = el('rect', {
+                x: 20, y: 10, width: W - 40, height: H - 20,
+                fill: 'none', stroke: '#8b6914', 'stroke-width': '0.5', opacity: '0.3'
+            });
+            const border2 = el('rect', {
+                x: 24, y: 14, width: W - 48, height: H - 28,
+                fill: 'none', stroke: '#8b6914', 'stroke-width': '0.3', opacity: '0.2'
+            });
+            svg.insertBefore(border, svg.firstChild);
+            svg.insertBefore(border2, svg.firstChild);
+
+            // ── Start ──────────────────────────────────────────────────────────────────
+            // Small delay then grow
+            setTimeout(animateGrowth, 300);
+
+        })();
+    </script>
+</body>
+
+</html>
